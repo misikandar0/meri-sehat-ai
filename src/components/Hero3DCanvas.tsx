@@ -2,106 +2,59 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { Activity, ShieldCheck, Sparkles, Compass, Eye, Maximize2, Layers } from 'lucide-react';
+import {
+  Activity,
+  ShieldCheck,
+  Sparkles,
+  Layers,
+  RotateCcw,
+  Maximize2,
+  Heart,
+  Droplets,
+  Zap,
+  Split,
+  Eye,
+  Play,
+  Pause,
+} from 'lucide-react';
 
-interface FloatingMarker {
-  id: string;
-  name: string;
-  shortName: string;
-  sampleValue: string;
-  unit: string;
-  status: 'optimal' | 'within_range' | 'sample';
-  role: string;
-  position3D: [number, number, number];
-  screenX: number;
-  screenY: number;
-  visible: boolean;
-}
-
-type ViewMode = 'core' | 'vascular' | 'cellular' | 'scan';
+type IsolatedLayer = 'all' | 'skeleton' | 'muscles' | 'vascular' | 'neural';
 
 export default function Hero3DCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [webGLSupported, setWebGLSupported] = useState(true);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [activeMarker, setActiveMarker] = useState<string | null>(null);
-  const [currentViewMode, setCurrentViewMode] = useState<ViewMode>('core');
-  const [rotMetrics, setRotMetrics] = useState({ rotX: 0, rotY: 0, depth: 5.2 });
 
-  // Markers in 3D coordinate space mapped to 2D screen positions
-  const [markers, setMarkers] = useState<FloatingMarker[]>([
-    {
-      id: 'hb',
-      name: 'Hemoglobin',
-      shortName: 'Hb',
-      sampleValue: '13.8',
-      unit: 'g/dL',
-      status: 'within_range',
-      role: 'Oxygen Transport',
-      position3D: [0.65, 0.45, 0.3],
-      screenX: 0,
-      screenY: 0,
-      visible: true,
-    },
-    {
-      id: 'wbc',
-      name: 'White Blood Cells',
-      shortName: 'WBC',
-      sampleValue: '6.8',
-      unit: 'x10⁹/L',
-      status: 'optimal',
-      role: 'Immune Defense',
-      position3D: [-0.7, 0.1, 0.25],
-      screenX: 0,
-      screenY: 0,
-      visible: true,
-    },
-    {
-      id: 'plt',
-      name: 'Platelet Count',
-      shortName: 'PLT',
-      sampleValue: '260',
-      unit: 'x10⁹/L',
-      status: 'optimal',
-      role: 'Vascular Integrity',
-      position3D: [0.35, -0.65, 0.4],
-      screenX: 0,
-      screenY: 0,
-      visible: true,
-    },
-  ]);
+  // Interaction States
+  const [isDissociated, setIsDissociated] = useState<boolean>(false);
+  const [activeLayer, setActiveLayer] = useState<IsolatedLayer>('all');
+  const [rotationSpeed, setRotationSpeed] = useState<number>(1); // 0 = paused, 1 = normal, 2 = fast
+  const [rotMetrics, setRotMetrics] = useState({ rotY: 0, depth: 5.4, progress: 0 });
+  const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
-  // Ref to hold the active view mode for render loop access
-  const viewModeRef = useRef<ViewMode>(currentViewMode);
-  viewModeRef.current = currentViewMode;
+  // Refs for animation loop access without re-binding
+  const isDissociatedRef = useRef(isDissociated);
+  isDissociatedRef.current = isDissociated;
+
+  const activeLayerRef = useRef(activeLayer);
+  activeLayerRef.current = activeLayer;
+
+  const rotationSpeedRef = useRef(rotationSpeed);
+  rotationSpeedRef.current = rotationSpeed;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
 
-    // 1. Verify WebGL support
-    try {
-      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-      if (!gl) {
-        setWebGLSupported(false);
-        return;
-      }
-    } catch {
-      setWebGLSupported(false);
-      return;
-    }
-
-    // 2. Initialize Three.js Scene, Camera, and Renderer
+    // 1. Scene, Camera, and WebGL Renderer
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x07111f, 0.12);
+    scene.fog = new THREE.FogExp2(0x07111f, 0.08);
 
     const width = container.clientWidth || 600;
-    const height = container.clientHeight || 600;
+    const height = container.clientHeight || 640;
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    camera.position.set(0, 0, 5.2);
+    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 100);
+    camera.position.set(0, 0, 5.4);
 
     let renderer: THREE.WebGLRenderer;
     try {
@@ -112,305 +65,630 @@ export default function Hero3DCanvas() {
         powerPreference: 'high-performance',
       });
       renderer.setSize(width, height);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    } catch {
-      setWebGLSupported(false);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    } catch (e) {
+      console.warn('WebGL init fallback:', e);
       return;
     }
 
-    // 3. Dynamic Lighting System (Cyan & Soft Violet Atmospheric Duo)
-    const ambientLight = new THREE.AmbientLight(0x0b1930, 2.5);
+    // 2. High-End Bioluminescent Lighting System
+    const ambientLight = new THREE.AmbientLight(0x0b1930, 2.2);
     scene.add(ambientLight);
 
-    const cyanLight = new THREE.DirectionalLight(0x56e6f2, 4.0);
-    cyanLight.position.set(3, 4, 3);
-    scene.add(cyanLight);
+    const cyanKeyLight = new THREE.DirectionalLight(0x56e6f2, 4.5);
+    cyanKeyLight.position.set(4, 5, 4);
+    scene.add(cyanKeyLight);
 
-    const violetLight = new THREE.DirectionalLight(0x9b8cff, 3.5);
-    violetLight.position.set(-3, -2, 2);
-    scene.add(violetLight);
+    const magentaFillLight = new THREE.DirectionalLight(0xff3366, 3.2);
+    magentaFillLight.position.set(-4, -2, 3);
+    scene.add(magentaFillLight);
 
-    const coreLight = new THREE.PointLight(0x56e6f2, 2.0, 4);
-    coreLight.position.set(0, 0, 0);
-    scene.add(coreLight);
+    const goldBackLight = new THREE.DirectionalLight(0xffb703, 2.8);
+    goldBackLight.position.set(0, 3, -4);
+    scene.add(goldBackLight);
 
-    // 4. Create Anatomical / Cellular Holographic Sculpture
-    const group = new THREE.Group();
-    scene.add(group);
+    const corePointLight = new THREE.PointLight(0x56e6f2, 3.0, 6);
+    corePointLight.position.set(0, 0.3, 0);
+    scene.add(corePointLight);
 
-    // A. Center Volumetric Ribbed Torso/Core Form
-    const coreGeometry = new THREE.IcosahedronGeometry(1.2, 3);
-    const coreMaterial = new THREE.MeshPhysicalMaterial({
-      color: 0x0b1930,
-      emissive: 0x112240,
-      roughness: 0.2,
-      metalness: 0.8,
+    // 3. MASTER HUMAN ASSEMBLY & ANATOMICAL LAYER GROUPS
+    const masterAssembly = new THREE.Group();
+    scene.add(masterAssembly);
+
+    const skeletonGroup = new THREE.Group();
+    const muscleGroup = new THREE.Group();
+    const vascularGroup = new THREE.Group();
+    const neuralGroup = new THREE.Group();
+    const biofield5DGroup = new THREE.Group();
+
+    masterAssembly.add(skeletonGroup);
+    masterAssembly.add(muscleGroup);
+    masterAssembly.add(vascularGroup);
+    masterAssembly.add(neuralGroup);
+    masterAssembly.add(biofield5DGroup);
+
+    // =========================================================================
+    // LAYER 1: SKELETAL SYSTEM (BONES) - Bioluminescent Ivory / Electric Cyan
+    // =========================================================================
+    const boneMaterial = new THREE.MeshStandardMaterial({
+      color: 0xdff9fb,
+      emissive: 0x22a6b3,
+      emissiveIntensity: 0.35,
+      roughness: 0.25,
+      metalness: 0.65,
+      wireframe: false,
+    });
+
+    const boneJointMaterial = new THREE.MeshBasicMaterial({
+      color: 0x56e6f2,
       wireframe: true,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.75,
     });
-    const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
-    group.add(coreMesh);
 
-    // B. Inner Glowing Bio-Sphere (Holographic Organ Core)
-    const innerGeometry = new THREE.IcosahedronGeometry(0.85, 2);
-    const innerMaterial = new THREE.MeshStandardMaterial({
-      color: 0x56e6f2,
-      emissive: 0x1d3356,
-      emissiveIntensity: 0.6,
-      roughness: 0.3,
-      metalness: 0.5,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.45,
-    });
-    const innerMesh = new THREE.Mesh(innerGeometry, innerMaterial);
-    group.add(innerMesh);
+    // A. Cranium / Skull
+    const skullGeom = new THREE.SphereGeometry(0.32, 24, 20);
+    skullGeom.scale(0.85, 1.15, 0.95);
+    const skullMesh = new THREE.Mesh(skullGeom, boneMaterial);
+    skullMesh.position.set(0, 1.45, 0);
+    skeletonGroup.add(skullMesh);
 
-    // C. Orbital Vascular Lattice Rings
-    const ring1Geom = new THREE.TorusGeometry(1.7, 0.015, 16, 100);
-    const ringMaterial = new THREE.MeshBasicMaterial({
-      color: 0x56e6f2,
-      transparent: true,
-      opacity: 0.6,
-    });
-    const ring1 = new THREE.Mesh(ring1Geom, ringMaterial);
-    ring1.rotation.x = Math.PI / 3;
-    ring1.rotation.y = Math.PI / 6;
-    group.add(ring1);
+    // Mandible / Jaw
+    const jawGeom = new THREE.BoxGeometry(0.24, 0.16, 0.26);
+    const jawMesh = new THREE.Mesh(jawGeom, boneMaterial);
+    jawMesh.position.set(0, 1.22, 0.08);
+    skeletonGroup.add(jawMesh);
 
-    const ring2Geom = new THREE.TorusGeometry(1.95, 0.012, 16, 100);
-    const ring2Material = new THREE.MeshBasicMaterial({
-      color: 0x9b8cff,
-      transparent: true,
-      opacity: 0.55,
-    });
-    const ring2 = new THREE.Mesh(ring2Geom, ring2Material);
-    ring2.rotation.x = -Math.PI / 4;
-    ring2.rotation.z = Math.PI / 4;
-    group.add(ring2);
-
-    // D. Cellular Particle Constellation (Microscopic Blood Matrix)
-    const particleCount = 320;
-    const particleGeometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(particleCount * 3);
-    const colors = new Float32Array(particleCount * 3);
-
-    const colorCyan = new THREE.Color(0x56e6f2);
-    const colorViolet = new THREE.Color(0x9b8cff);
-    const colorWhite = new THREE.Color(0xf7faff);
-
-    for (let i = 0; i < particleCount; i++) {
-      const radius = 1.3 + Math.random() * 1.7;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(Math.random() * 2 - 1);
-
-      positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
-      positions[i * 3 + 2] = radius * Math.cos(phi);
-
-      const chosenColor = i % 3 === 0 ? colorCyan : i % 3 === 1 ? colorViolet : colorWhite;
-      colors[i * 3] = chosenColor.r;
-      colors[i * 3 + 1] = chosenColor.g;
-      colors[i * 3 + 2] = chosenColor.b;
+    // B. Vertebral Column (Spine - 20 Segmented Vertebrae)
+    for (let i = 0; i < 20; i++) {
+      const vY = 1.15 - i * 0.08;
+      const vertGeom = new THREE.CylinderGeometry(0.05, 0.06, 0.045, 10);
+      const vertMesh = new THREE.Mesh(vertGeom, boneMaterial);
+      vertMesh.position.set(0, vY, -0.04 + Math.sin(i * 0.3) * 0.02);
+      skeletonGroup.add(vertMesh);
     }
 
-    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    // C. Ribcage (10 Bilateral Curved Thoracic Rib Arches & Sternum)
+    const sternumGeom = new THREE.CylinderGeometry(0.04, 0.035, 0.55, 8);
+    const sternumMesh = new THREE.Mesh(sternumGeom, boneMaterial);
+    sternumMesh.position.set(0, 0.65, 0.22);
+    skeletonGroup.add(sternumMesh);
 
-    const particleMaterial = new THREE.PointsMaterial({
-      size: 0.045,
-      vertexColors: true,
+    for (let r = 0; r < 8; r++) {
+      const ribY = 0.9 - r * 0.07;
+      const radiusX = 0.36 - r * 0.015;
+      const ribGeom = new THREE.TorusGeometry(radiusX, 0.016, 8, 24, Math.PI * 1.15);
+      const ribMesh = new THREE.Mesh(ribGeom, boneJointMaterial);
+      ribMesh.rotation.x = Math.PI / 2 + 0.15;
+      ribMesh.rotation.z = Math.PI * 0.42;
+      ribMesh.position.set(0, ribY, 0.04);
+      skeletonGroup.add(ribMesh);
+    }
+
+    // D. Clavicles (Collarbones)
+    const clavicleGeom = new THREE.CylinderGeometry(0.025, 0.025, 0.65, 8);
+    const clavicleMesh = new THREE.Mesh(clavicleGeom, boneMaterial);
+    clavicleMesh.rotation.z = Math.PI / 2;
+    clavicleMesh.position.set(0, 1.05, 0.08);
+    skeletonGroup.add(clavicleMesh);
+
+    // E. Pelvic Girdle (Sacrum & Iliac Wings)
+    const pelvisGeom = new THREE.TorusGeometry(0.34, 0.07, 10, 24, Math.PI * 1.2);
+    const pelvisMesh = new THREE.Mesh(pelvisGeom, boneMaterial);
+    pelvisMesh.rotation.x = Math.PI / 2 + 0.3;
+    pelvisMesh.rotation.z = Math.PI * 0.4;
+    pelvisMesh.position.set(0, -0.4, 0);
+    skeletonGroup.add(pelvisMesh);
+
+    // F. Upper Limbs (Humerus, Radius, Ulna, Hands)
+    const createArmSkeleton = (side: number) => {
+      // Humerus (Upper arm)
+      const humerusGeom = new THREE.CylinderGeometry(0.035, 0.03, 0.55, 10);
+      const humerus = new THREE.Mesh(humerusGeom, boneMaterial);
+      humerus.position.set(side * 0.55, 0.72, 0);
+      humerus.rotation.z = side * -0.15;
+      skeletonGroup.add(humerus);
+
+      // Elbow joint
+      const elbowGeom = new THREE.SphereGeometry(0.045, 10, 10);
+      const elbow = new THREE.Mesh(elbowGeom, boneJointMaterial);
+      elbow.position.set(side * 0.62, 0.42, 0);
+      skeletonGroup.add(elbow);
+
+      // Forearm (Radius/Ulna)
+      const forearmGeom = new THREE.CylinderGeometry(0.028, 0.024, 0.52, 10);
+      const forearm = new THREE.Mesh(forearmGeom, boneMaterial);
+      forearm.position.set(side * 0.68, 0.14, 0.05);
+      forearm.rotation.z = side * -0.12;
+      skeletonGroup.add(forearm);
+
+      // Hand
+      const handGeom = new THREE.BoxGeometry(0.07, 0.12, 0.03);
+      const hand = new THREE.Mesh(handGeom, boneMaterial);
+      hand.position.set(side * 0.73, -0.16, 0.08);
+      skeletonGroup.add(hand);
+    };
+    createArmSkeleton(1);
+    createArmSkeleton(-1);
+
+    // G. Lower Limbs (Femur, Knee, Tibia, Fibula, Feet)
+    const createLegSkeleton = (side: number) => {
+      // Femur (Thigh bone)
+      const femurGeom = new THREE.CylinderGeometry(0.045, 0.038, 0.75, 10);
+      const femur = new THREE.Mesh(femurGeom, boneMaterial);
+      femur.position.set(side * 0.22, -0.85, 0);
+      femur.rotation.z = side * -0.05;
+      skeletonGroup.add(femur);
+
+      // Patella / Knee Joint
+      const kneeGeom = new THREE.SphereGeometry(0.055, 10, 10);
+      const knee = new THREE.Mesh(kneeGeom, boneJointMaterial);
+      knee.position.set(side * 0.23, -1.25, 0.04);
+      skeletonGroup.add(knee);
+
+      // Tibia / Lower leg
+      const tibiaGeom = new THREE.CylinderGeometry(0.036, 0.03, 0.72, 10);
+      const tibia = new THREE.Mesh(tibiaGeom, boneMaterial);
+      tibia.position.set(side * 0.24, -1.65, 0);
+      skeletonGroup.add(tibia);
+
+      // Foot
+      const footGeom = new THREE.BoxGeometry(0.09, 0.05, 0.22);
+      const foot = new THREE.Mesh(footGeom, boneMaterial);
+      foot.position.set(side * 0.25, -2.04, 0.08);
+      skeletonGroup.add(foot);
+    };
+    createLegSkeleton(1);
+    createLegSkeleton(-1);
+
+    // =========================================================================
+    // LAYER 2: MUSCULAR SYSTEM (MUSCLES) - Crimson Holographic Fiber Shader
+    // =========================================================================
+    const muscleMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xff4757,
+      emissive: 0xb33939,
+      emissiveIntensity: 0.45,
+      roughness: 0.3,
+      metalness: 0.35,
+      transmission: 0.35,
+      transparent: true,
+      opacity: 0.78,
+      wireframe: false,
+    });
+
+    const muscleFiberMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff6b81,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.65,
+    });
+
+    // Pectorals (Chest Plates)
+    [-1, 1].forEach((side) => {
+      const pecGeom = new THREE.BoxGeometry(0.24, 0.22, 0.12);
+      const pecMesh = new THREE.Mesh(pecGeom, muscleMaterial);
+      pecMesh.position.set(side * 0.16, 0.76, 0.23);
+      pecMesh.rotation.y = side * 0.2;
+      muscleGroup.add(pecMesh);
+    });
+
+    // Abdominal Wall (Rectus Abdominis - 6 Segmented Packs)
+    for (let row = 0; row < 3; row++) {
+      [-1, 1].forEach((side) => {
+        const absGeom = new THREE.BoxGeometry(0.13, 0.12, 0.08);
+        const absMesh = new THREE.Mesh(absGeom, muscleMaterial);
+        absMesh.position.set(side * 0.09, 0.48 - row * 0.14, 0.2);
+        muscleGroup.add(absMesh);
+      });
+    }
+
+    // Deltoids (Shoulders)
+    [-1, 1].forEach((side) => {
+      const deltGeom = new THREE.SphereGeometry(0.12, 12, 12);
+      deltGeom.scale(1, 1.4, 1.1);
+      const deltMesh = new THREE.Mesh(deltGeom, muscleMaterial);
+      deltMesh.position.set(side * 0.52, 0.96, 0.05);
+      muscleGroup.add(deltMesh);
+
+      // Biceps
+      const bicepGeom = new THREE.CylinderGeometry(0.08, 0.07, 0.35, 10);
+      const bicepMesh = new THREE.Mesh(bicepGeom, muscleMaterial);
+      bicepMesh.position.set(side * 0.58, 0.7, 0.04);
+      muscleGroup.add(bicepMesh);
+
+      // Quadriceps (Thigh Muscles)
+      const quadGeom = new THREE.CylinderGeometry(0.12, 0.09, 0.62, 12);
+      const quadMesh = new THREE.Mesh(quadGeom, muscleMaterial);
+      quadMesh.position.set(side * 0.23, -0.82, 0.05);
+      muscleGroup.add(quadMesh);
+
+      // Calves (Gastrocnemius)
+      const calfGeom = new THREE.SphereGeometry(0.1, 12, 12);
+      calfGeom.scale(0.9, 1.8, 1);
+      const calfMesh = new THREE.Mesh(calfGeom, muscleMaterial);
+      calfMesh.position.set(side * 0.24, -1.55, -0.02);
+      muscleGroup.add(calfMesh);
+    });
+
+    // Muscle Contour Wireframe Mesh Envelope
+    const muscleTorsoGeom = new THREE.CylinderGeometry(0.38, 0.28, 0.95, 16, 6);
+    const muscleTorsoMesh = new THREE.Mesh(muscleTorsoGeom, muscleFiberMaterial);
+    muscleTorsoMesh.position.set(0, 0.48, 0.06);
+    muscleGroup.add(muscleTorsoMesh);
+
+    // =========================================================================
+    // LAYER 3: VASCULAR SYSTEM (VEINS, ARTERIES & PULSING HEART)
+    // =========================================================================
+    const arteryMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff1744, // Bright arterial red
+      wireframe: true,
       transparent: true,
       opacity: 0.85,
     });
-    const particles = new THREE.Points(particleGeometry, particleMaterial);
-    group.add(particles);
 
-    // E. 3D Glowing Anchor Nodes at Specific Marker Coordinates
-    const markerMeshes: THREE.Mesh[] = [];
-    markers.forEach((m) => {
-      const pinGeom = new THREE.SphereGeometry(0.065, 16, 16);
-      const pinMat = new THREE.MeshBasicMaterial({
-        color: m.id === 'hb' ? 0x56e6f2 : m.id === 'wbc' ? 0x9b8cff : 0x56e6f2,
-      });
-      const pinMesh = new THREE.Mesh(pinGeom, pinMat);
-      pinMesh.position.set(...m.position3D);
-      group.add(pinMesh);
-      markerMeshes.push(pinMesh);
+    const veinMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff, // Bright venous cyan
+      wireframe: true,
+      transparent: true,
+      opacity: 0.85,
     });
+
+    // Anatomical Beating Heart
+    const heartMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13, 16, 16),
+      new THREE.MeshStandardMaterial({
+        color: 0xff0055,
+        emissive: 0xff0033,
+        emissiveIntensity: 0.8,
+        roughness: 0.2,
+      })
+    );
+    heartMesh.position.set(-0.06, 0.68, 0.12);
+    vascularGroup.add(heartMesh);
+
+    // Aortic Arch & Descending Aorta
+    const aortaCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.06, 0.75, 0.12),
+      new THREE.Vector3(-0.02, 0.88, 0.1),
+      new THREE.Vector3(0.04, 0.82, 0.06),
+      new THREE.Vector3(0.02, 0.2, 0.02),
+      new THREE.Vector3(0.0, -0.4, 0.02),
+    ]);
+    const aortaGeom = new THREE.TubeGeometry(aortaCurve, 32, 0.025, 8, false);
+    const aortaMesh = new THREE.Mesh(aortaGeom, arteryMaterial);
+    vascularGroup.add(aortaMesh);
+
+    // Vena Cava (Major Return Vein)
+    const venaCavaCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.08, 0.95, 0.06),
+      new THREE.Vector3(0.06, 0.68, 0.1),
+      new THREE.Vector3(0.05, 0.15, 0.03),
+      new THREE.Vector3(0.04, -0.42, 0.02),
+    ]);
+    const venaCavaMesh = new THREE.Mesh(
+      new THREE.TubeGeometry(venaCavaCurve, 24, 0.024, 8, false),
+      veinMaterial
+    );
+    vascularGroup.add(venaCavaMesh);
+
+    // Carotid Arteries (Ascending Neck to Head)
+    [-1, 1].forEach((side) => {
+      const carotidCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(side * 0.05, 0.88, 0.08),
+        new THREE.Vector3(side * 0.09, 1.15, 0.06),
+        new THREE.Vector3(side * 0.12, 1.42, 0.05),
+      ]);
+      const carotidMesh = new THREE.Mesh(
+        new THREE.TubeGeometry(carotidCurve, 16, 0.015, 6, false),
+        arteryMaterial
+      );
+      vascularGroup.add(carotidMesh);
+
+      // Arm Vessels (Brachial & Radial)
+      const armVesselCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(side * 0.15, 0.9, 0.08),
+        new THREE.Vector3(side * 0.52, 0.72, 0.02),
+        new THREE.Vector3(side * 0.64, 0.35, 0.04),
+        new THREE.Vector3(side * 0.72, -0.15, 0.06),
+      ]);
+      const armVesselMesh = new THREE.Mesh(
+        new THREE.TubeGeometry(armVesselCurve, 24, 0.014, 6, false),
+        side === 1 ? arteryMaterial : veinMaterial
+      );
+      vascularGroup.add(armVesselMesh);
+
+      // Leg Vessels (Femoral & Tibial)
+      const legVesselCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(side * 0.04, -0.42, 0.02),
+        new THREE.Vector3(side * 0.2, -0.85, 0.04),
+        new THREE.Vector3(side * 0.22, -1.35, 0.02),
+        new THREE.Vector3(side * 0.24, -1.95, 0.05),
+      ]);
+      const legVesselMesh = new THREE.Mesh(
+        new THREE.TubeGeometry(legVesselCurve, 28, 0.016, 6, false),
+        side === 1 ? arteryMaterial : veinMaterial
+      );
+      vascularGroup.add(legVesselMesh);
+    });
+
+    // Circulating Blood Stream Particles (Dynamic Erythrocyte Flow)
+    const bloodCellCount = 220;
+    const bloodCellGeom = new THREE.BufferGeometry();
+    const bloodCellPositions = new Float32Array(bloodCellCount * 3);
+    const bloodCellColors = new Float32Array(bloodCellCount * 3);
+
+    for (let b = 0; b < bloodCellCount; b++) {
+      const t = Math.random();
+      // Distribute along vascular corridors
+      const side = Math.random() > 0.5 ? 1 : -1;
+      const isArterial = Math.random() > 0.45;
+
+      const y = (Math.random() - 0.5) * 3.2;
+      const spread = Math.sin((y + 1.6) / 3.2 * Math.PI) * 0.35;
+      const x = (Math.random() - 0.5) * spread + (y < -0.4 ? side * 0.22 : y > 0.2 ? side * 0.15 : 0);
+      const z = (Math.random() - 0.5) * 0.2;
+
+      bloodCellPositions[b * 3] = x;
+      bloodCellPositions[b * 3 + 1] = y;
+      bloodCellPositions[b * 3 + 2] = z;
+
+      // Color: Red for arterial blood, Cyan for oxygenated return
+      if (isArterial) {
+        bloodCellColors[b * 3] = 1.0;
+        bloodCellColors[b * 3 + 1] = 0.15;
+        bloodCellColors[b * 3 + 2] = 0.25;
+      } else {
+        bloodCellColors[b * 3] = 0.34;
+        bloodCellColors[b * 3 + 1] = 0.9;
+        bloodCellColors[b * 3 + 2] = 0.95;
+      }
+    }
+
+    bloodCellGeom.setAttribute('position', new THREE.BufferAttribute(bloodCellPositions, 3));
+    bloodCellGeom.setAttribute('color', new THREE.BufferAttribute(bloodCellColors, 3));
+
+    const bloodCellMat = new THREE.PointsMaterial({
+      size: 0.038,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const bloodCells = new THREE.Points(bloodCellGeom, bloodCellMat);
+    vascularGroup.add(bloodCells);
+
+    // =========================================================================
+    // LAYER 4: NEURAL / NERVOUS SYSTEM (BRAIN & SYNAPSE MATRIX)
+    // =========================================================================
+    // Brain Cerebral Cortex
+    const brainGeom = new THREE.IcosahedronGeometry(0.24, 2);
+    const brainMat = new THREE.MeshBasicMaterial({
+      color: 0x9b8cff,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const brainMesh = new THREE.Mesh(brainGeom, brainMat);
+    brainMesh.position.set(0, 1.48, -0.02);
+    neuralGroup.add(brainMesh);
+
+    // Spinal Neural Conduit (Spinal Cord)
+    const spinalCordGeom = new THREE.CylinderGeometry(0.022, 0.018, 1.5, 10);
+    const spinalCordMat = new THREE.MeshBasicMaterial({
+      color: 0x9b8cff,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.75,
+    });
+    const spinalCordMesh = new THREE.Mesh(spinalCordGeom, spinalCordMat);
+    spinalCordMesh.position.set(0, 0.45, -0.06);
+    neuralGroup.add(spinalCordMesh);
+
+    // Radiating Synaptic Neural Particles (Action Potentials)
+    const synapseCount = 140;
+    const synapseGeom = new THREE.BufferGeometry();
+    const synapsePositions = new Float32Array(synapseCount * 3);
+
+    for (let s = 0; s < synapseCount; s++) {
+      synapsePositions[s * 3] = (Math.random() - 0.5) * 0.9;
+      synapsePositions[s * 3 + 1] = 1.6 - Math.random() * 2.8;
+      synapsePositions[s * 3 + 2] = (Math.random() - 0.5) * 0.4;
+    }
+    synapseGeom.setAttribute('position', new THREE.BufferAttribute(synapsePositions, 3));
+    const synapsePoints = new THREE.Points(
+      synapseGeom,
+      new THREE.PointsMaterial({
+        color: 0xc8d6e5,
+        size: 0.03,
+        transparent: true,
+        opacity: 0.8,
+      })
+    );
+    neuralGroup.add(synapsePoints);
+
+    // =========================================================================
+    // LAYER 5: 5D HYPER-DIMENSIONAL QUANTUM GYROSCOPE RINGS
+    // =========================================================================
+    const ring1 = new THREE.Mesh(
+      new THREE.TorusGeometry(1.65, 0.012, 16, 120),
+      new THREE.MeshBasicMaterial({ color: 0x56e6f2, transparent: true, opacity: 0.6 })
+    );
+    ring1.rotation.x = Math.PI / 3;
+    biofield5DGroup.add(ring1);
+
+    const ring2 = new THREE.Mesh(
+      new THREE.TorusGeometry(1.9, 0.01, 16, 120),
+      new THREE.MeshBasicMaterial({ color: 0x9b8cff, transparent: true, opacity: 0.55 })
+    );
+    ring2.rotation.y = Math.PI / 4;
+    biofield5DGroup.add(ring2);
+
+    const ring3 = new THREE.Mesh(
+      new THREE.TorusGeometry(2.15, 0.008, 16, 120),
+      new THREE.MeshBasicMaterial({ color: 0xffb703, transparent: true, opacity: 0.5 })
+    );
+    ring3.rotation.z = Math.PI / 6;
+    biofield5DGroup.add(ring3);
 
     setIsLoaded(true);
 
-    // 5. Scroll Interaction: Track Scroll Offset & Velocity While Page is Moving
+    // 4. ANIMATION INTERPOLATION VARIABLES (DISSOCIATION & 5D MOTION)
+    let currentDissociate = 0;
+    let targetDissociate = 0;
+
+    let autoRotationAngle = 0;
+    let isDragging = false;
+    let previousPointerX = 0;
+    let userManualRotationY = 0;
+
+    // Pointer Drag to Rotate Around Model
+    const onPointerDown = (e: PointerEvent) => {
+      isDragging = true;
+      previousPointerX = e.clientX;
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isDragging) return;
+      const deltaX = e.clientX - previousPointerX;
+      userManualRotationY += deltaX * 0.008;
+      previousPointerX = e.clientX;
+    };
+
+    const onPointerUp = () => {
+      isDragging = false;
+    };
+
+    canvas.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+
+    // Page Scroll Coupling
     let scrollY = 0;
-    let targetScrollRotationY = 0;
-    let targetScrollRotationX = 0;
-    let targetCameraZ = 5.2;
-    let lastScrollY = 0;
-    let scrollVelocity = 0;
-
-    const handleScroll = () => {
-      scrollY = window.scrollY || window.pageYOffset;
-      scrollVelocity = scrollY - lastScrollY;
-      lastScrollY = scrollY;
-
-      // 3D Rotation Transitions linked to page scroll movement
-      targetScrollRotationY = scrollY * 0.0035;
-      targetScrollRotationX = Math.sin(scrollY * 0.002) * 0.4;
-
-      // 3D Camera Depth Transition while page is moving
-      // As user scrolls down, camera draws in closer, then shifts angle
-      const scrollFactor = Math.min(1.5, scrollY / 600);
-      targetCameraZ = 5.2 - scrollFactor * 0.9;
+    const onScroll = () => {
+      scrollY = window.scrollY || window.pageYOffset || 0;
     };
+    window.addEventListener('scroll', onScroll, { passive: true });
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
-
-    // 6. Mouse Interaction / Pointer Parallax
-    let targetPointerX = 0;
-    let targetPointerY = 0;
-
-    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-      const rect = container.getBoundingClientRect();
-      const x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      const y = -(((clientY - rect.top) / rect.height) * 2 - 1);
-      targetPointerY = x * 0.45;
-      targetPointerX = -y * 0.35;
-    };
-
-    window.addEventListener('mousemove', handlePointerMove);
-    window.addEventListener('touchmove', handlePointerMove, { passive: true });
-
-    // 7. Resize Observer
-    const handleResize = () => {
-      if (!container || !renderer) return;
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    };
-
-    const resizeObserver = new ResizeObserver(handleResize);
-    resizeObserver.observe(container);
-
-    // 8. Render Loop with Smooth 3D Transitions on Scroll & Camera Morphing
+    // 5. MAIN RENDER LOOP (Continuous 5D Circular Orbit & Explosive Dissociation)
     let animationFrameId: number;
     let clock = new THREE.Clock();
-    const tempV = new THREE.Vector3();
-
-    // Mode-specific target offsets
-    const modeCameraTargets: Record<ViewMode, { z: number; y: number; fov: number }> = {
-      core: { z: 5.2, y: 0, fov: 45 },
-      vascular: { z: 4.5, y: 0.3, fov: 42 },
-      cellular: { z: 3.9, y: -0.2, fov: 40 },
-      scan: { z: 4.8, y: 0.5, fov: 48 },
-    };
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
+
       const elapsedTime = clock.getElapsedTime();
+      const speedMultiplier = rotationSpeedRef.current;
 
-      // Combined 3D Rotation from Idle Orbit + Mouse Parallax + Page Moving Scroll
-      const combinedTargetY = targetPointerY + targetScrollRotationY;
-      const combinedTargetX = targetPointerX + targetScrollRotationX;
+      // Update Target Dissociation Value
+      targetDissociate = isDissociatedRef.current ? 1.0 : 0.0;
+      currentDissociate = THREE.MathUtils.lerp(currentDissociate, targetDissociate, 0.055);
 
-      group.rotation.y += 0.003;
-      group.rotation.x += (combinedTargetX - group.rotation.x) * 0.06;
-      group.rotation.y += (combinedTargetY - (group.rotation.y % (Math.PI * 2))) * 0.04;
-      group.rotation.z += (Math.cos(elapsedTime * 0.5 + scrollY * 0.001) * 0.1 - group.rotation.z) * 0.03;
+      // A. Continuous Circular Motion (5D Hyper-Orbital Motion)
+      autoRotationAngle += 0.0075 * speedMultiplier;
+      masterAssembly.rotation.y = autoRotationAngle + userManualRotationY;
 
-      // 3D Camera Transitions (Smooth Lerp to target depth while page moving)
-      const currentMode = viewModeRef.current;
-      const modeTarget = modeCameraTargets[currentMode];
-      const finalTargetZ = modeTarget.z - (Math.min(1.2, scrollY / 700) * 0.8);
+      // Scroll-Linked Multi-Axis Perspective Pitch
+      const scrollPitch = Math.sin(scrollY * 0.002) * 0.12;
+      masterAssembly.rotation.x = scrollPitch;
+      masterAssembly.rotation.z = Math.cos(scrollY * 0.0015) * 0.05;
 
-      camera.position.z += (finalTargetZ - camera.position.z) * 0.05;
-      camera.position.y += (modeTarget.y - camera.position.y) * 0.05;
+      // Camera Z-Depth reacts slightly to scroll
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, 5.4 + (scrollY * 0.0006), 0.05);
 
-      // Smoothly orbit lights with scroll motion
-      cyanLight.position.x = 3 * Math.cos(scrollY * 0.003 + elapsedTime * 0.5);
-      cyanLight.position.z = 3 * Math.sin(scrollY * 0.003 + elapsedTime * 0.5);
-      violetLight.position.x = -3 * Math.cos(scrollY * 0.003 - elapsedTime * 0.4);
+      // B. Dissociation Layer Vectors (Exploded Separations)
+      // 1. Muscles glide forward (+Z) and right (+X)
+      muscleGroup.position.set(
+        currentDissociate * 0.75,
+        0,
+        currentDissociate * 1.25
+      );
+      muscleGroup.rotation.y = currentDissociate * 0.18;
 
-      // Ring Dilation & Rotation speed changes while page moves
-      const velocityDilation = Math.min(0.25, Math.abs(scrollVelocity) * 0.008);
-      ring1.scale.setScalar(1 + velocityDilation);
-      ring2.scale.setScalar(1 + velocityDilation * 1.2);
+      // 2. Vascular System (Veins & Heart) glides backward (-Z) and left (-X)
+      vascularGroup.position.set(
+        -currentDissociate * 0.75,
+        0,
+        -currentDissociate * 1.25
+      );
+      vascularGroup.rotation.y = -currentDissociate * 0.18;
 
-      ring1.rotation.z = elapsedTime * 0.15 + scrollY * 0.004;
-      ring2.rotation.z = -elapsedTime * 0.12 - scrollY * 0.003;
+      // 3. Neural System glides upward (+Y)
+      neuralGroup.position.set(
+        0,
+        currentDissociate * 0.65,
+        0
+      );
 
-      coreMesh.rotation.y = elapsedTime * 0.15 + scrollY * 0.002;
-      coreMesh.rotation.x = elapsedTime * 0.08;
-      innerMesh.rotation.y = -elapsedTime * 0.22 - scrollY * 0.003;
-      particles.rotation.y = elapsedTime * 0.05 + scrollY * 0.0015;
+      // 4. Skeleton remains anchored with slight breathing dilation
+      skeletonGroup.position.set(0, 0, 0);
+      skeletonGroup.scale.setScalar(1 + currentDissociate * 0.05);
 
-      // Decay scroll velocity gradually
-      scrollVelocity *= 0.9;
+      // 5. 5D Rings expand in exploded mode
+      biofield5DGroup.scale.setScalar(1 + currentDissociate * 0.35);
+      ring1.rotation.x = elapsedTime * 0.4 * speedMultiplier;
+      ring1.rotation.y = elapsedTime * 0.6 * speedMultiplier;
+      ring2.rotation.y = -elapsedTime * 0.5 * speedMultiplier;
+      ring2.rotation.z = elapsedTime * 0.3 * speedMultiplier;
+      ring3.rotation.z = elapsedTime * 0.45 * speedMultiplier;
 
-      // Project 3D marker coordinates to 2D screen positions
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      const updatedScreenCoords = markers.map((m, idx) => {
-        const mesh = markerMeshes[idx];
-        if (mesh) {
-          mesh.getWorldPosition(tempV);
-          tempV.project(camera);
-          const x = ((tempV.x + 1) * w) / 2;
-          const y = ((-tempV.y + 1) * h) / 2;
-          const isBehind = tempV.z > 1;
-          return {
-            ...m,
-            screenX: Math.max(10, Math.min(w - 140, x)),
-            screenY: Math.max(10, Math.min(h - 80, y)),
-            visible: !isBehind,
-          };
+      // C. Beating Heart Cardiac Pulse Animation (72 BPM)
+      const heartPulse = 1.0 + Math.sin(elapsedTime * 7.5) * 0.09 * (1 + (Math.sin(elapsedTime * 15) > 0 ? 0.08 : 0));
+      heartMesh.scale.setScalar(heartPulse);
+
+      // D. Circulating Blood Stream Motion along Corridors
+      const bPositions = bloodCellGeom.attributes.position.array as Float32Array;
+      for (let b = 0; b < bloodCellCount; b++) {
+        bPositions[b * 3 + 1] -= 0.018 * speedMultiplier; // Flow downward
+        if (bPositions[b * 3 + 1] < -2.1) {
+          bPositions[b * 3 + 1] = 1.55; // Recycle back to head/heart
         }
-        return m;
-      });
+      }
+      bloodCellGeom.attributes.position.needsUpdate = true;
 
-      setMarkers(updatedScreenCoords);
+      // E. Synaptic Neural Sparkle Pulsing
+      brainMesh.rotation.y = elapsedTime * 0.3;
 
-      // Update HUD metrics
-      setRotMetrics({
-        rotX: Math.round((group.rotation.x * 180) / Math.PI),
-        rotY: Math.round((group.rotation.y * 180) / Math.PI) % 360,
-        depth: parseFloat(camera.position.z.toFixed(2)),
-      });
+      // F. Layer Visibility Isolation Controls
+      const currentLayer = activeLayerRef.current;
+      skeletonGroup.visible = currentLayer === 'all' || currentLayer === 'skeleton';
+      muscleGroup.visible = currentLayer === 'all' || currentLayer === 'muscles';
+      vascularGroup.visible = currentLayer === 'all' || currentLayer === 'vascular';
+      neuralGroup.visible = currentLayer === 'all' || currentLayer === 'neural';
+
+      // Update rotation telemetry state occasionally
+      if (Math.floor(elapsedTime * 30) % 6 === 0) {
+        setRotMetrics({
+          rotY: Math.round(((masterAssembly.rotation.y * 180) / Math.PI) % 360),
+          depth: parseFloat(camera.position.z.toFixed(2)),
+          progress: Math.round(currentDissociate * 100),
+        });
+      }
 
       renderer.render(scene, camera);
     };
 
     animate();
 
-    // 9. Cleanup
+    // 6. Responsive Resize Handling
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        const { width: newWidth, height: newHeight } = entry.contentRect;
+        if (newWidth > 0 && newHeight > 0) {
+          camera.aspect = newWidth / newHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(newWidth, newHeight);
+        }
+      }
+    });
+    resizeObserver.observe(container);
+
+    // 7. Cleanup
     return () => {
       cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('mousemove', handlePointerMove);
-      window.removeEventListener('touchmove', handlePointerMove);
+      window.removeEventListener('scroll', onScroll);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
       resizeObserver.disconnect();
-
-      coreGeometry.dispose();
-      coreMaterial.dispose();
-      innerGeometry.dispose();
-      innerMaterial.dispose();
-      ring1Geom.dispose();
-      ringMaterial.dispose();
-      ring2Geom.dispose();
-      ring2Material.dispose();
-      particleGeometry.dispose();
-      particleMaterial.dispose();
-      markerMeshes.forEach((m) => {
-        m.geometry.dispose();
-        if (Array.isArray(m.material)) m.material.forEach((mat) => mat.dispose());
-        else m.material.dispose();
-      });
-
       renderer.dispose();
     };
   }, []);
@@ -418,126 +696,189 @@ export default function Hero3DCanvas() {
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-[520px] sm:h-[580px] lg:h-[640px] flex items-center justify-center select-none overflow-hidden"
-      aria-label="Interactive 3D Anatomical & Biomarker Visualization with Scroll Transitions"
+      className="relative w-full h-[540px] sm:h-[600px] lg:h-[680px] flex items-center justify-center select-none overflow-hidden bg-gradient-to-b from-[#07111F]/95 via-[#0B1930]/85 to-[#07111F]"
+      aria-label="Interactive 3D Anatomical Human Model with Exploded Layer Dissociation and 5D Orbital Motion"
     >
-      {/* Background Radial Glow */}
+      {/* Dynamic 5D Holographic Radial Aurora */}
       <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-        <div className="w-[340px] h-[340px] sm:w-[500px] sm:h-[500px] rounded-full bg-gradient-to-tr from-[#56E6F2]/10 via-[#9B8CFF]/15 to-transparent blur-3xl animate-atmospheric" />
-      </div>
-
-      {webGLSupported ? (
-        <canvas
-          ref={canvasRef}
-          className={`w-full h-full cursor-grab active:cursor-grabbing transition-opacity duration-700 ${
-            isLoaded ? 'opacity-100' : 'opacity-0'
+        <div
+          className={`rounded-full blur-3xl transition-all duration-700 ${
+            isDissociated
+              ? 'w-[520px] h-[520px] bg-gradient-to-tr from-[#56E6F2]/20 via-[#ff4757]/20 to-[#9B8CFF]/25 scale-110'
+              : 'w-[400px] h-[400px] bg-gradient-to-tr from-[#56E6F2]/15 via-[#9B8CFF]/15 to-transparent'
           }`}
         />
-      ) : (
-        /* Fallback SVG Architectural Illustration if WebGL is disabled */
-        <div className="relative w-full h-full flex flex-col items-center justify-center p-6 text-center">
-          <div className="w-48 h-48 rounded-full border border-[#56E6F2]/30 flex items-center justify-center relative animate-pulse-subtle bg-[#0B1930]/40">
-            <div className="w-32 h-32 rounded-full border border-[#9B8CFF]/40 flex items-center justify-center">
-              <Activity className="w-12 h-12 text-[#56E6F2]" />
-            </div>
-            <div className="absolute -top-3 px-3 py-1 rounded-full bg-[#0B1930] border border-[#56E6F2]/40 text-[#56E6F2] text-[10px] font-bold">
-              Biomarker Matrix
-            </div>
-          </div>
-          <p className="text-xs text-[#8FA2BD] mt-4 max-w-xs">
-            Holographic Anatomical System Active (2D Accelerated Mode)
-          </p>
+      </div>
+
+      {/* Primary 3D WebGL Canvas */}
+      <canvas
+        ref={canvasRef}
+        onClick={() => setIsDissociated(!isDissociated)}
+        className="w-full h-full cursor-grab active:cursor-grabbing transition-opacity duration-500 z-10"
+        title="Click to dissociate human body into bones, muscles and veins!"
+      />
+
+      {/* TOP-LEFT HUD: 5D Orbit & Dissociation Telemetry */}
+      <div className="absolute top-4 left-4 z-20 flex flex-col gap-1.5 pointer-events-none">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0B1930]/85 backdrop-blur-md border border-[#56E6F2]/30 text-[10px] font-mono text-[#56E6F2] shadow-lg">
+          <Sparkles className="w-3.5 h-3.5 text-[#56E6F2] animate-pulse" />
+          <span>
+            5D ANATOMY • ORBIT: {rotMetrics.rotY}° • Z:{rotMetrics.depth}m
+          </span>
         </div>
-      )}
 
-      {/* Floating 3D Biomarker HUD Labels (Synchronized with 3D Matrix) */}
-      {isLoaded &&
-        markers.map((marker) => {
-          if (!marker.visible || marker.screenX === 0) return null;
-          const isExpanded = activeMarker === marker.id;
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl bg-[#07111F]/80 backdrop-blur-md border border-white/10 text-[10px] font-mono text-[#8FA2BD]">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              isDissociated ? 'bg-[#ff4757] animate-ping' : 'bg-[#56E6F2]'
+            }`}
+          />
+          <span>
+            MODE: {isDissociated ? `DISSOCIATED (${rotMetrics.progress}%)` : 'ASSEMBLED (HOLISTIC)'}
+          </span>
+        </div>
+      </div>
 
-          return (
-            <div
-              key={marker.id}
-              style={{
-                left: `${marker.screenX}px`,
-                top: `${marker.screenY}px`,
-                transform: 'translate(-50%, -50%)',
-              }}
-              className="absolute z-20 transition-transform duration-100 ease-out pointer-events-auto"
-            >
-              <div className="relative group">
-                <button
-                  type="button"
-                  onClick={() => setActiveMarker(isExpanded ? null : marker.id)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#07111F]/90 backdrop-blur-md border border-[#56E6F2]/40 shadow-lg shadow-[#07111F]/80 hover:border-[#56E6F2] hover:scale-105 transition-all focus:outline-none focus:ring-2 focus:ring-[#56E6F2] cursor-pointer"
-                  aria-label={`${marker.name} sample marker: ${marker.sampleValue} ${marker.unit}`}
-                >
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#56E6F2] opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-[#56E6F2]" />
-                  </span>
-
-                  <span className="text-[11px] font-bold text-[#F7FAFF] tracking-wide">
-                    {marker.shortName}
-                  </span>
-                  <span className="text-[10px] font-mono font-medium text-[#56E6F2]">
-                    {marker.sampleValue}
-                  </span>
-                  <span className="text-[9px] text-[#8FA2BD]">
-                    {marker.unit}
-                  </span>
-                </button>
-
-                {/* Expanded Micro-Card on Click */}
-                {isExpanded && (
-                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-52 p-3.5 rounded-2xl bg-[#0B1930]/95 backdrop-blur-xl border border-[#56E6F2]/30 shadow-2xl text-left z-30 animate-in fade-in zoom-in-95 duration-200">
-                    <div className="flex items-center justify-between text-[10px] text-[#56E6F2] font-mono mb-1">
-                      <span>{marker.role}</span>
-                      <span className="px-1.5 py-0.5 rounded bg-[#56E6F2]/10 border border-[#56E6F2]/30 text-[9px] font-bold">
-                        Sample Marker
-                      </span>
-                    </div>
-                    <div className="text-xs font-bold text-[#F7FAFF]">{marker.name}</div>
-                    <div className="text-[11px] text-[#8FA2BD] mt-1 leading-snug">
-                      Illustrative reference demonstration value for laboratory report decoding.
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-
-      {/* Real-time 3D Scroll Perspective Mode Switcher Controls */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 p-1 rounded-2xl bg-[#07111F]/80 backdrop-blur-xl border border-white/10 shadow-lg">
-        {(['core', 'vascular', 'cellular', 'scan'] as ViewMode[]).map((mode) => (
+      {/* TOP-RIGHT CONTROLS: Anatomical Layer Isolators */}
+      <div className="absolute top-4 right-4 z-20 flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-[#07111F]/85 backdrop-blur-xl border border-white/10 shadow-xl">
+        {(
+          [
+            { id: 'all', label: 'All' },
+            { id: 'skeleton', label: 'Bones' },
+            { id: 'muscles', label: 'Muscles' },
+            { id: 'vascular', label: 'Veins' },
+            { id: 'neural', label: 'Neural' },
+          ] as { id: IsolatedLayer; label: string }[]
+        ).map((item) => (
           <button
-            key={mode}
+            key={item.id}
             type="button"
-            onClick={() => setCurrentViewMode(mode)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveLayer(item.id);
+            }}
             className={`px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
-              currentViewMode === mode
-                ? 'bg-gradient-to-r from-[#56E6F2] to-[#38bdf8] text-[#07111F] shadow-sm'
+              activeLayer === item.id
+                ? 'bg-gradient-to-r from-[#56E6F2] to-[#38bdf8] text-[#07111F] shadow-md shadow-[#56E6F2]/25'
                 : 'text-[#8FA2BD] hover:text-[#F7FAFF] hover:bg-white/5'
             }`}
           >
-            {mode}
+            {item.label}
           </button>
         ))}
       </div>
 
-      {/* Decorative HUD Corner Accents with Real-time 3D Scroll Rotation Metrics */}
-      <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0B1930]/80 backdrop-blur-md border border-white/10 text-[10px] font-mono text-[#56E6F2] shadow-sm">
-        <Sparkles className="w-3 h-3 text-[#56E6F2]" />
-        <span>SCROLL-LINKED 3D • Y:{rotMetrics.rotY}° X:{rotMetrics.rotX}° Z:{rotMetrics.depth}m</span>
-      </div>
+      {/* DISSOCIATED FLOATING 3D HOLOGRAPHIC CALLOUT LABELS */}
+      {isDissociated && (
+        <div className="absolute inset-0 pointer-events-none z-20 flex items-center justify-between px-6 sm:px-12">
+          {/* Left Callouts: Vascular & Neural */}
+          <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-left-4 duration-300">
+            <div className="p-3 rounded-2xl bg-[#0B1930]/90 backdrop-blur-xl border border-[#00e5ff]/40 shadow-xl max-w-[190px]">
+              <div className="flex items-center gap-1.5 text-[#00e5ff] text-[10px] font-mono font-bold">
+                <Heart className="w-3.5 h-3.5 fill-[#ff1744] text-[#ff1744] animate-pulse" />
+                <span>VASCULAR & VEINS</span>
+              </div>
+              <p className="text-[11px] text-[#F7FAFF] font-semibold mt-1">
+                72 BPM • Active Circulation
+              </p>
+              <p className="text-[10px] text-[#8FA2BD] leading-tight mt-0.5">
+                Hemoglobin, RBCs & Platelet transport network.
+              </p>
+            </div>
 
-      <div className="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-4 flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#07111F]/90 backdrop-blur-md border border-white/10 text-[10px] text-[#8FA2BD] shadow-sm">
-        <ShieldCheck className="w-3.5 h-3.5 text-[#56E6F2] shrink-0" />
-        <span>
-          3D transitions actively respond to page movement and pointer depth.
-        </span>
+            <div className="p-3 rounded-2xl bg-[#0B1930]/90 backdrop-blur-xl border border-[#9b8cff]/40 shadow-xl max-w-[190px]">
+              <div className="flex items-center gap-1.5 text-[#9b8cff] text-[10px] font-mono font-bold">
+                <Zap className="w-3.5 h-3.5" />
+                <span>NEURAL CONDUIT</span>
+              </div>
+              <p className="text-[11px] text-[#F7FAFF] font-semibold mt-1">
+                Central Synaptic Matrix
+              </p>
+              <p className="text-[10px] text-[#8FA2BD] leading-tight mt-0.5">
+                Spinal cord & reflex nerve impulses.
+              </p>
+            </div>
+          </div>
+
+          {/* Right Callouts: Muscles & Bones */}
+          <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
+            <div className="p-3 rounded-2xl bg-[#0B1930]/90 backdrop-blur-xl border border-[#ff4757]/40 shadow-xl max-w-[190px]">
+              <div className="flex items-center gap-1.5 text-[#ff4757] text-[10px] font-mono font-bold">
+                <Layers className="w-3.5 h-3.5" />
+                <span>MUSCULAR FIBERS</span>
+              </div>
+              <p className="text-[11px] text-[#F7FAFF] font-semibold mt-1">
+                Myocyte Contractile Layer
+              </p>
+              <p className="text-[10px] text-[#8FA2BD] leading-tight mt-0.5">
+                Glucose metabolism & creatine phosphate reserves.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-[#0B1930]/90 backdrop-blur-xl border border-[#56e6f2]/40 shadow-xl max-w-[190px]">
+              <div className="flex items-center gap-1.5 text-[#56e6f2] text-[10px] font-mono font-bold">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>SKELETAL FRAME</span>
+              </div>
+              <p className="text-[11px] text-[#F7FAFF] font-semibold mt-1">
+                Hematopoietic Marrow
+              </p>
+              <p className="text-[10px] text-[#8FA2BD] leading-tight mt-0.5">
+                Calcium framework & blood cell synthesis.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CENTER-BOTTOM PRIMARY CTA: CLICK TO DISSOCIATE */}
+      <div className="absolute bottom-5 inset-x-0 z-20 flex flex-col items-center gap-2 pointer-events-none">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsDissociated(!isDissociated);
+          }}
+          className={`pointer-events-auto group relative inline-flex items-center gap-2 px-6 py-3 rounded-full font-extrabold text-xs tracking-wide uppercase transition-all duration-300 shadow-2xl hover:scale-105 active:scale-95 cursor-pointer ${
+            isDissociated
+              ? 'bg-gradient-to-r from-[#ff4757] via-[#ff6b81] to-[#ffa502] text-white shadow-[0_0_35px_rgba(255,71,87,0.45)]'
+              : 'bg-gradient-to-r from-[#56E6F2] via-[#38bdf8] to-[#9B8CFF] text-[#07111F] shadow-[0_0_35px_rgba(86,230,242,0.4)]'
+          }`}
+        >
+          <Split className={`w-4 h-4 transition-transform duration-500 ${isDissociated ? 'rotate-180' : ''}`} />
+          <span>
+            {isDissociated ? 'Reassemble Human Body' : 'Click to Dissociate Anatomy (5D Exploded View)'}
+          </span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-black/20 text-current">
+            {isDissociated ? 'Unified' : 'Explode'}
+          </span>
+        </button>
+
+        {/* Orbit Speed & Interactive Hint */}
+        <div className="flex items-center gap-3 text-[10px] text-[#8FA2BD] pointer-events-auto">
+          <span className="hidden sm:inline">Drag to orbit freely • Click body or button to separate layers</span>
+          <div className="flex items-center gap-1 bg-[#07111F]/80 px-2 py-0.5 rounded-full border border-white/10">
+            <button
+              type="button"
+              onClick={() => setRotationSpeed(rotationSpeed === 0 ? 1 : 0)}
+              className="hover:text-[#56E6F2] transition-colors p-0.5"
+              title={rotationSpeed === 0 ? 'Resume Orbit' : 'Pause Orbit'}
+            >
+              {rotationSpeed === 0 ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+            </button>
+            <span className="text-white/20">|</span>
+            <button
+              type="button"
+              onClick={() => setRotationSpeed(rotationSpeed === 2 ? 1 : 2)}
+              className={`px-1.5 py-0.2 rounded font-mono ${
+                rotationSpeed === 2 ? 'text-[#56E6F2] font-bold' : 'text-[#8FA2BD]'
+              }`}
+              title="Fast 5D Rotation"
+            >
+              2x
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
